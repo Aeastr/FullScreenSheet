@@ -74,26 +74,42 @@ struct CustomPanGesture: UIGestureRecognizerRepresentable {
                 return false
             }
 
+            // If the other gesture is a pan gesture but NOT attached to a scroll/collection view,
+            // block the dismiss gesture (for other custom drag gestures in the content)
+            if otherGestureRecognizer is UIPanGestureRecognizer {
+                let isScrollViewGesture = otherGestureRecognizer.view is UIScrollView ||
+                                         otherGestureRecognizer.view is UICollectionView
+                if !isScrollViewGesture {
+                    return false
+                }
+            }
+
             // Get the vertical velocity of the pan gesture
             let velocity = panGesture.velocity(in: panGesture.view).y
-            var offset: CGFloat = 0
+            var verticalOffset: CGFloat = 0
+            var horizontalOffset: CGFloat = 0
 
             // Check if the other gesture belongs to a collection view
             if let collectionView = otherGestureRecognizer.view as? UICollectionView{
                 // Calculate the scroll position accounting for content insets
-                offset = collectionView.contentOffset.y + collectionView.adjustedContentInset.top
+                verticalOffset = collectionView.contentOffset.y + collectionView.adjustedContentInset.top
+                horizontalOffset = collectionView.contentOffset.x + collectionView.adjustedContentInset.left
             }
 
             // Check if the other gesture belongs to a scroll view
             if let scrollView = otherGestureRecognizer.view as? UIScrollView{
                 // Calculate the scroll position accounting for content insets
-                offset = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+                verticalOffset = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+                horizontalOffset = scrollView.contentOffset.x + scrollView.adjustedContentInset.left
             }
 
             // Only allow simultaneous recognition when:
-            // - The scroll view is at or very near the top
+            // - The scroll view is at or very near the top (vertically)
+            // - The scroll view is at or very near the left edge (horizontally)
             // - The user is dragging downward (velocity > 0)
-            let isElligible = offset <= GestureConstants.scrollOffsetThreshold && velocity > 0
+            let isElligible = verticalOffset <= GestureConstants.scrollOffsetThreshold &&
+                              horizontalOffset <= GestureConstants.scrollOffsetThreshold &&
+                              velocity > 0
             return isElligible
         }
 
@@ -111,6 +127,29 @@ struct CustomPanGesture: UIGestureRecognizerRepresentable {
             })) ?? false
 
             return !status
+        }
+
+        /// Makes the dismiss gesture wait for other pan gestures to fail first.
+        ///
+        /// This ensures that custom drag gestures in the content have priority
+        /// over the dismiss gesture. The dismiss gesture will only activate if the other
+        /// pan gesture fails to recognize.
+        ///
+        /// - Parameters:
+        ///   - gestureRecognizer: The dismiss gesture recognizer.
+        ///   - otherGestureRecognizer: Another gesture recognizer in the view hierarchy.
+        /// - Returns: `true` if dismiss gesture should wait for the other pan gesture to fail.
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            // If the other gesture is a pan gesture but NOT a scroll view gesture,
+            // require it to fail before the dismiss gesture can begin
+            // (gives priority to custom drag gestures in the content)
+            if otherGestureRecognizer is UIPanGestureRecognizer {
+                let isScrollViewGesture = otherGestureRecognizer.view is UIScrollView ||
+                                         otherGestureRecognizer.view is UICollectionView
+                return !isScrollViewGesture
+            }
+
+            return false
         }
     }
 }
